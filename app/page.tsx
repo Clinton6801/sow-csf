@@ -33,7 +33,7 @@ const HOUSE_NAMES = Object.keys(houseThemes) as HouseName[];
 // ─── DB helpers ───────────────────────────────────────────────────────────────
 async function loadRegistrations(): Promise<Registration[]> {
   try {
-    const r = localStorage.getItem(STORAGE_KEY);
+    const r = window.localStorage.getItem(STORAGE_KEY);
     return r ? JSON.parse(r) : [];
   } catch { return []; }
 }
@@ -41,7 +41,7 @@ async function loadRegistrations(): Promise<Registration[]> {
 async function saveRegistration(reg: Registration): Promise<void> {
   const all = await loadRegistrations();
   all.push(reg);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
 }
 
 // ─── Canvas helpers ───────────────────────────────────────────────────────────
@@ -177,10 +177,45 @@ const PLATFORMS = [
   },
 ];
 
-function SharePanel({ name, house, accentColor }: { name: string; house: string; accentColor: string }) {
+function SharePanel({ name, house, accentColor, canvasRef }: {
+  name: string; house: string; accentColor: string; canvasRef: React.RefObject<HTMLCanvasElement | null>;
+}) {
   const [copied, setCopied] = useState(false);
+  const [nativeSharing, setNativeSharing] = useState(false);
+  const [nativeSuccess, setNativeSuccess] = useState(false);
   const [hoveredBtn, setHoveredBtn] = useState<string | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
   const message = SHARE_MESSAGE(name, house);
+
+  useEffect(() => {
+    setIsMobile(/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent));
+  }, []);
+
+  // Get canvas blob for native share
+  const getCanvasBlob = (): Promise<Blob | null> =>
+    new Promise((resolve) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return resolve(null);
+      canvas.toBlob((blob) => resolve(blob), "image/png");
+    });
+
+  // Native Web Share API (mobile) — attaches image directly
+  const handleNativeShare = async () => {
+    setNativeSharing(true);
+    try {
+      const blob = await getCanvasBlob();
+      const shareData: ShareData = { text: message, title: "SOW Cultural Sports Festival 2026" };
+      if (blob && navigator.canShare && navigator.canShare({ files: [new File([blob], "sow-festival-pass.png", { type: "image/png" })] })) {
+        shareData.files = [new File([blob], "sow-festival-pass.png", { type: "image/png" })];
+      }
+      await navigator.share(shareData);
+      setNativeSuccess(true);
+      setTimeout(() => setNativeSuccess(false), 3000);
+    } catch (e) {
+      // User cancelled or not supported — silently ignore
+    }
+    setNativeSharing(false);
+  };
 
   const handlePlatform = (platform: typeof PLATFORMS[0]) => {
     if (platform.name === "Copy Text") {
@@ -190,56 +225,115 @@ function SharePanel({ name, house, accentColor }: { name: string; house: string;
     }
   };
 
+  const canNativeShare = typeof navigator !== "undefined" && !!navigator.share;
+
   return (
     <div style={{
       marginTop: "20px", width: "100%",
-      background: "linear-gradient(135deg, #0f172a, #1e293b)",
-      borderRadius: "18px", border: `1px solid ${accentColor}33`,
+      background: "linear-gradient(135deg, #0a0f1a, #1e293b)",
+      borderRadius: "20px", border: `1px solid ${accentColor}44`,
       overflow: "hidden",
-      boxShadow: `0 0 40px -10px ${accentColor}22`,
+      boxShadow: `0 0 50px -10px ${accentColor}33, 0 0 0 1px ${accentColor}11`,
     }}>
-      {/* Header */}
+
+      {/* ── Header ── */}
       <div style={{
-        padding: "16px 20px 12px",
-        borderBottom: "1px solid #1e293b",
-        background: `linear-gradient(135deg, ${accentColor}0a, transparent)`,
+        padding: "18px 22px 14px",
+        borderBottom: `1px solid ${accentColor}22`,
+        background: `linear-gradient(135deg, ${accentColor}12, transparent)`,
+        display: "flex", alignItems: "center", gap: "12px",
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <div style={{ fontSize: "22px" }}>🚀</div>
-          <div>
-            <div style={{ fontSize: "13px", fontWeight: "bold", color: "#f1f5f9", fontFamily: "Georgia, serif" }}>
-              Share Your Festival Pass!
-            </div>
-            <div style={{ fontSize: "11px", color: "#64748b", fontFamily: "Georgia, serif", marginTop: "2px" }}>
-              Spread the excitement — invite your friends & family
-            </div>
+        <div style={{
+          width: "44px", height: "44px", borderRadius: "12px", flexShrink: 0,
+          background: `linear-gradient(135deg, ${accentColor}33, ${accentColor}11)`,
+          border: `1px solid ${accentColor}44`,
+          display: "flex", alignItems: "center", justifyContent: "center", fontSize: "22px",
+        }}>🚀</div>
+        <div>
+          <div style={{ fontSize: "14px", fontWeight: "bold", color: "#f1f5f9", fontFamily: "Georgia, serif" }}>
+            Share Your Festival Pass!
+          </div>
+          <div style={{ fontSize: "11px", color: "#64748b", fontFamily: "Georgia, serif", marginTop: "3px" }}>
+            {isMobile && canNativeShare
+              ? "Your pass image will be attached automatically 🖼️"
+              : "Download your pass first, then attach it when sharing 🖼️"}
           </div>
         </div>
       </div>
 
-      {/* Message preview */}
-      <div style={{ padding: "14px 20px", borderBottom: "1px solid #1e293b" }}>
+      {/* ── Mobile: Native Share hero button ── */}
+      {canNativeShare && (
+        <div style={{ padding: "16px 22px 0" }}>
+          <button
+            onClick={handleNativeShare}
+            disabled={nativeSharing}
+            style={{
+              width: "100%", padding: "15px 18px", borderRadius: "14px",
+              border: `2px solid ${accentColor}`,
+              background: nativeSuccess
+                ? "linear-gradient(135deg, #052e16, #15803d)"
+                : `linear-gradient(135deg, ${accentColor}dd, ${accentColor})`,
+              color: "#fff", cursor: nativeSharing ? "wait" : "pointer",
+              fontFamily: "Georgia, serif", fontSize: "15px", fontWeight: "bold",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: "10px",
+              transition: "all 0.3s", letterSpacing: "0.5px",
+              boxShadow: `0 0 30px ${accentColor}44`,
+              opacity: nativeSharing ? 0.8 : 1,
+            }}
+          >
+            <span style={{ fontSize: "20px" }}>{nativeSuccess ? "✅" : nativeSharing ? "⏳" : "📤"}</span>
+            {nativeSuccess ? "Shared successfully!" : nativeSharing ? "Opening share sheet…" : "Share Pass + Image (with photo attached)"}
+          </button>
+          <div style={{ textAlign: "center", padding: "10px 0 4px", fontSize: "10px", color: "#475569", letterSpacing: "2px", textTransform: "uppercase", fontFamily: "Georgia, serif" }}>
+            — or share to a specific platform —
+          </div>
+        </div>
+      )}
+
+      {/* ── Desktop: Attach reminder banner ── */}
+      {!canNativeShare && (
+        <div style={{
+          margin: "16px 22px 0",
+          padding: "12px 16px", borderRadius: "12px",
+          background: "linear-gradient(135deg, #1c2a1a, #0f1a0d)",
+          border: "1px solid #22c55e33",
+          display: "flex", alignItems: "flex-start", gap: "10px",
+        }}>
+          <span style={{ fontSize: "20px", flexShrink: 0 }}>🖼️</span>
+          <div>
+            <div style={{ fontSize: "12px", fontWeight: "bold", color: "#22c55e", fontFamily: "Georgia, serif", marginBottom: "3px" }}>
+              Attach your pass image when posting!
+            </div>
+            <div style={{ fontSize: "11px", color: "#4ade80", fontFamily: "Georgia, serif", lineHeight: 1.6, opacity: 0.8 }}>
+              Your pass has been downloaded to your device. Open your platform of choice, paste the message below, and attach the image from your Downloads folder for maximum impact! 🎉
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Message preview ── */}
+      <div style={{ padding: "14px 22px", borderBottom: `1px solid ${accentColor}18`, marginTop: "14px" }}>
         <div style={{ fontSize: "10px", letterSpacing: "2px", color: "#475569", textTransform: "uppercase", fontFamily: "Georgia, serif", marginBottom: "8px" }}>
-          Your message
+          Your caption
         </div>
         <div style={{
-          background: "#0f172a", borderRadius: "10px", padding: "12px 14px",
-          border: "1px solid #334155", fontSize: "12px", color: "#94a3b8",
-          fontFamily: "Georgia, serif", lineHeight: 1.7,
-          maxHeight: "110px", overflowY: "auto",
+          background: "#070c14", borderRadius: "12px", padding: "14px 16px",
+          border: "1px solid #1e293b", fontSize: "12px", color: "#94a3b8",
+          fontFamily: "Georgia, serif", lineHeight: 1.8,
+          maxHeight: "120px", overflowY: "auto",
           whiteSpace: "pre-wrap", wordBreak: "break-word",
         }}>
           {message}
         </div>
       </div>
 
-      {/* Platform buttons */}
-      <div style={{ padding: "14px 20px 18px" }}>
+      {/* ── Platform buttons ── */}
+      <div style={{ padding: "16px 22px 20px" }}>
         <div style={{ fontSize: "10px", letterSpacing: "2px", color: "#475569", textTransform: "uppercase", fontFamily: "Georgia, serif", marginBottom: "12px" }}>
           Share on
         </div>
 
-        {/* Facebook — hero button */}
+        {/* Facebook hero */}
         <button
           onClick={() => handlePlatform(PLATFORMS[0])}
           onMouseEnter={() => setHoveredBtn("Facebook")}
@@ -247,22 +341,22 @@ function SharePanel({ name, house, accentColor }: { name: string; house: string;
           style={{
             width: "100%", padding: "14px 18px", borderRadius: "12px", marginBottom: "10px",
             border: hoveredBtn === "Facebook" ? "2px solid #1877f2" : "2px solid #1877f244",
-            background: hoveredBtn === "Facebook" ? "#1877f2" : "#1877f222",
+            background: hoveredBtn === "Facebook" ? "#1877f2" : "#1877f218",
             color: "#fff", cursor: "pointer", fontFamily: "Georgia, serif",
             display: "flex", alignItems: "center", justifyContent: "center", gap: "10px",
-            fontSize: "14px", fontWeight: "bold", transition: "all 0.2s",
-            boxShadow: hoveredBtn === "Facebook" ? "0 0 24px #1877f244" : "none",
+            fontSize: "14px", fontWeight: "bold", transition: "all 0.25s",
+            boxShadow: hoveredBtn === "Facebook" ? "0 0 28px #1877f255" : "none",
           }}
         >
-          <span style={{ fontSize: "18px", fontWeight: "900", fontFamily: "Arial, sans-serif" }}>f</span>
+          <span style={{ fontSize: "20px", fontWeight: "900", fontFamily: "Arial, sans-serif", lineHeight: 1 }}>f</span>
           Share on Facebook — We're Going LIVE! 📺
         </button>
 
-        {/* Other platforms grid */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))", gap: "8px" }}>
+        {/* Other platforms */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(90px, 1fr))", gap: "8px" }}>
           {PLATFORMS.slice(1).map((p) => {
-            const isHovered = hoveredBtn === p.name;
-            const isCopied = p.name === "Copy Text" && copied;
+            const isHov = hoveredBtn === p.name;
+            const isCop = p.name === "Copy Text" && copied;
             return (
               <button
                 key={p.name}
@@ -270,30 +364,37 @@ function SharePanel({ name, house, accentColor }: { name: string; house: string;
                 onMouseEnter={() => setHoveredBtn(p.name)}
                 onMouseLeave={() => setHoveredBtn(null)}
                 style={{
-                  padding: "11px 8px", borderRadius: "10px",
-                  border: isHovered ? `2px solid ${p.color}` : `2px solid ${p.border}`,
-                  background: isHovered ? p.bg : "transparent",
-                  color: isCopied ? "#22c55e" : p.color,
+                  padding: "12px 6px", borderRadius: "10px",
+                  border: isHov ? `2px solid ${p.color}` : `2px solid ${p.border}`,
+                  background: isHov ? p.bg : "transparent",
+                  color: isCop ? "#22c55e" : p.color,
                   cursor: "pointer", fontFamily: "Georgia, serif",
                   display: "flex", flexDirection: "column", alignItems: "center", gap: "5px",
-                  fontSize: "10px", fontWeight: "bold", transition: "all 0.2s",
-                  letterSpacing: "0.5px",
+                  fontSize: "10px", fontWeight: "bold", transition: "all 0.2s", letterSpacing: "0.5px",
+                  boxShadow: isHov ? `0 0 16px ${p.color}33` : "none",
                 }}
               >
-                <span style={{ fontSize: "18px" }}>{isCopied ? "✓" : p.icon}</span>
-                {isCopied ? "Copied!" : p.name}
+                <span style={{ fontSize: "17px" }}>{isCop ? "✓" : p.icon}</span>
+                {isCop ? "Copied!" : p.name}
               </button>
             );
           })}
         </div>
 
+        {/* Attach reminder under grid for desktop */}
+        {!canNativeShare && (
+          <div style={{ marginTop: "12px", padding: "10px 14px", borderRadius: "10px", background: "#0f172a", border: "1px solid #334155", fontSize: "11px", color: "#64748b", fontFamily: "Georgia, serif", lineHeight: 1.6 }}>
+            💡 <strong style={{ color: "#94a3b8" }}>Pro tip:</strong> After clicking a platform above, attach your downloaded pass image manually for the best impression!
+          </div>
+        )}
+
         {/* Hashtag chips */}
         <div style={{ marginTop: "14px", display: "flex", flexWrap: "wrap", gap: "6px" }}>
           {["#SOWculturalsportsfestival", "#SOW7thbiennialinterhousesport"].map(tag => (
             <span key={tag} style={{
-              padding: "4px 10px", borderRadius: "20px", fontSize: "10px",
+              padding: "5px 12px", borderRadius: "20px", fontSize: "10px",
               background: accentColor + "18", color: accentColor,
-              border: `1px solid ${accentColor}33`, fontFamily: "monospace",
+              border: `1px solid ${accentColor}33`, fontFamily: "monospace", letterSpacing: "0.3px",
             }}>{tag}</span>
           ))}
         </div>
@@ -331,7 +432,7 @@ function PassPreview({ canvasRef, image, accentColor, canvasWidth, canvasHeight,
         ↓ Download Digital Pass
       </button>
       {showShare && shareName && shareHouse && (
-        <SharePanel name={shareName} house={shareHouse} accentColor={accentColor} />
+        <SharePanel name={shareName} house={shareHouse} accentColor={accentColor} canvasRef={canvasRef} />
       )}
     </div>
   );
@@ -537,7 +638,7 @@ function StudentRegistration({ onBack }: { onBack: () => void }) {
 
   useEffect(() => {
     (async () => {
-      try { const r = localStorage.getItem(COUNT_KEY); setRegCount(r ? parseInt(r) || 0 : 0); }
+      try { const r = window.localStorage.getItem(COUNT_KEY); setRegCount(r ? parseInt(r) || 0 : 0); }
       catch { setRegCount(0); }
     })();
   }, []);
@@ -551,10 +652,10 @@ function StudentRegistration({ onBack }: { onBack: () => void }) {
     if (!formData.name || !image) return;
     setSaving(true);
     try {
-      const r = localStorage.getItem(COUNT_KEY);
+      const r = window.localStorage.getItem(COUNT_KEY);
       const current = r ? parseInt(r) || 0 : 0;
       const newCount = current + 1;
-      localStorage.setItem(COUNT_KEY, String(newCount));
+      window.localStorage.setItem(COUNT_KEY, String(newCount));
       setRegCount(newCount); setMyNumber(newCount);
       const reg: Registration = { id: `s_${Date.now()}`, type: "Student", name: formData.name, house: formData.house, className: formData.className, regNumber: newCount, timestamp: new Date().toISOString() };
       await saveRegistration(reg);
