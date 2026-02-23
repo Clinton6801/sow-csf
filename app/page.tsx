@@ -1,8 +1,12 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
 
-const SUPABASE_URL = "https://ftvucbgindnzbqrsuemp.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ0dnVjYmdpbmRuemJxcnN1ZW1wIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3ODc1NzQsImV4cCI6MjA4NzM2MzU3NH0.2mSyEk7KmcDN3Y5WtecwZvBCsQD--rNzPpi4li7fUlo";
+// ═══════════════════════════════════════════════════════════════
+// 🔧 SUPABASE CONFIG — paste your credentials here
+// Dashboard → Settings → API
+// ═══════════════════════════════════════════════════════════════
+const SUPABASE_URL = "https://YOUR_PROJECT.supabase.co";
+const SUPABASE_ANON_KEY = "YOUR_ANON_KEY_HERE";
 
 // ─── Types ────────────────────────────────────────────────────
 type HouseName = "Amani House" | "Imara House" | "Zamani House" | "Ubora House";
@@ -103,6 +107,35 @@ async function saveRegistration(reg: Registration): Promise<void> {
       timestamp: reg.timestamp,
     }),
   });
+}
+
+async function deleteRegistration(id: string): Promise<void> {
+  await sbFetch(`/registrations?id=eq.${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+async function renumberStudents(allRegs: Registration[]): Promise<Registration[]> {
+  // Get all students sorted by their original timestamp (oldest first)
+  const students = allRegs
+    .filter(r => r.type === "Student")
+    .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+  // Reassign reg_number sequentially 1, 2, 3…
+  for (let i = 0; i < students.length; i++) {
+    const newNum = i + 1;
+    if (students[i].reg_number !== newNum) {
+      await sbFetch(`/registrations?id=eq.${encodeURIComponent(students[i].id)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ reg_number: newNum }),
+      });
+      students[i] = { ...students[i], reg_number: newNum };
+    }
+  }
+
+  // Return full updated list (guests unchanged, students renumbered)
+  const guests = allRegs.filter(r => r.type === "Guest");
+  return [...guests, ...students].sort(
+    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+  );
 }
 
 // Supabase realtime subscription via WebSocket
@@ -674,6 +707,53 @@ function StudentRegistration({ onBack }: { onBack: () => void }) {
   );
 }
 
+// ─── Delete Confirmation Modal ────────────────────────────────
+function DeleteConfirmModal({ reg, onConfirm, onCancel, deleting }: {
+  reg: Registration; onConfirm: () => void; onCancel: () => void; deleting: boolean;
+}) {
+  const ht = houseThemes[reg.house];
+  const isStudent = reg.type === "Student";
+  return (
+    <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "24px" }}>
+      <div style={{ width: "100%", maxWidth: "420px", backgroundColor: "#1e293b", borderRadius: "20px", padding: "36px 32px", boxShadow: "0 0 0 1px #334155, 0 32px 64px -8px rgba(0,0,0,0.8)", fontFamily: "Georgia,serif" }}>
+        {/* Icon */}
+        <div style={{ width: "56px", height: "56px", borderRadius: "14px", background: "linear-gradient(135deg,#450a0a,#7f1d1d)", border: "1px solid #ef444433", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "26px", marginBottom: "20px" }}>🗑️</div>
+        {/* Title */}
+        <h2 style={{ color: "#f1f5f9", fontSize: "20px", margin: "0 0 8px 0" }}>Delete Registration?</h2>
+        <p style={{ color: "#64748b", fontSize: "13px", margin: "0 0 20px 0", lineHeight: 1.6 }}>
+          This will permanently remove this registration from Supabase.{isStudent ? " All remaining student numbers will be recalculated." : ""} This cannot be undone.
+        </p>
+        {/* Registration card */}
+        <div style={{ backgroundColor: "#0f172a", borderRadius: "12px", padding: "14px 16px", border: "1px solid #334155", marginBottom: "24px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
+            <span style={{ padding: "3px 10px", borderRadius: "20px", fontSize: "11px", fontWeight: "bold", backgroundColor: isStudent ? "#92400e22" : "#1e40af22", color: isStudent ? "#f97316" : "#3b82f6" }}>
+              {isStudent ? "🎓 Student" : "🎟️ Guest"}
+            </span>
+            {isStudent && reg.reg_number && (
+              <span style={{ fontSize: "11px", color: "#475569", fontFamily: "monospace" }}>#{String(reg.reg_number).padStart(4, "0")}</span>
+            )}
+          </div>
+          <div style={{ color: "#f1f5f9", fontSize: "16px", fontWeight: "bold", marginBottom: "4px" }}>{reg.name}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <span style={{ fontSize: "12px", color: ht.accent }}>{ht.emoji} {reg.house}</span>
+            {reg.class_name && <span style={{ fontSize: "11px", color: "#64748b" }}>• {reg.class_name}</span>}
+            {reg.mode && <span style={{ fontSize: "11px", color: "#64748b" }}>• {reg.mode}</span>}
+          </div>
+        </div>
+        {/* Buttons */}
+        <div style={{ display: "flex", gap: "10px" }}>
+          <button onClick={onCancel} disabled={deleting} style={{ flex: 1, padding: "13px", borderRadius: "12px", border: "2px solid #334155", background: "#0f172a", color: "#94a3b8", fontSize: "14px", fontWeight: "bold", fontFamily: "Georgia,serif", cursor: "pointer" }}>
+            Cancel
+          </button>
+          <button onClick={onConfirm} disabled={deleting} style={{ flex: 1, padding: "13px", borderRadius: "12px", border: "none", background: deleting ? "#450a0a" : "linear-gradient(135deg,#7f1d1d,#ef4444)", color: "#fff", fontSize: "14px", fontWeight: "bold", fontFamily: "Georgia,serif", cursor: deleting ? "wait" : "pointer", opacity: deleting ? 0.7 : 1 }}>
+            {deleting ? "Deleting…" : "Yes, Delete"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── ADMIN DASHBOARD ──────────────────────────────────────────
 function AdminDashboard({ onBack }: { onBack: () => void }) {
   const [authed, setAuthed] = useState(false);
@@ -685,6 +765,8 @@ function AdminDashboard({ onBack }: { onBack: () => void }) {
   const [filter, setFilter] = useState<"All" | "Guest" | "Student">("All");
   const [houseFilter, setHouseFilter] = useState<"All" | HouseName>("All");
   const [search, setSearch] = useState("");
+  const [confirmReg, setConfirmReg] = useState<Registration | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const login = () => {
     if (pw === ADMIN_PASSWORD) { setAuthed(true); setPwError(false); fetchData(); }
@@ -725,6 +807,21 @@ function AdminDashboard({ onBack }: { onBack: () => void }) {
   const formatDate = (iso: string) => {
     const d = new Date(iso);
     return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) + "  " + d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  };
+
+  const handleDelete = async () => {
+    if (!confirmReg) return;
+    setDeleting(true);
+    try {
+      await deleteRegistration(confirmReg.id);
+      const remaining = regs.filter(r => r.id !== confirmReg.id);
+      // Renumber students if we deleted a student
+      const updated = confirmReg.type === "Student" ? await renumberStudents(remaining) : remaining;
+      setRegs(updated);
+      setLiveCount(updated.length);
+    } catch (e) { console.error("Delete failed:", e); alert("Delete failed — please try again."); }
+    setDeleting(false);
+    setConfirmReg(null);
   };
 
   if (!authed) {
@@ -809,7 +906,7 @@ function AdminDashboard({ onBack }: { onBack: () => void }) {
               <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "600px" }}>
                 <thead>
                   <tr style={{ borderBottom: "1px solid #334155" }}>
-                    {["#", "Type", "Name", "House", "Class / Mode", "Registered"].map((h) => (
+                    {["#", "Type", "Name", "House", "Class / Mode", "Registered", ""].map((h) => (
                       <th key={h} style={{ padding: "14px 16px", textAlign: "left", fontSize: "10px", letterSpacing: "2px", color: "#64748b", textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
                     ))}
                   </tr>
@@ -839,6 +936,13 @@ function AdminDashboard({ onBack }: { onBack: () => void }) {
                         <td style={{ padding: "14px 16px", color: "#64748b", fontSize: "12px", fontFamily: "monospace", whiteSpace: "nowrap" }}>
                           {formatDate(r.timestamp)}
                         </td>
+                        <td style={{ padding: "10px 16px" }}>
+                          <button onClick={() => setConfirmReg(r)} style={{ padding: "6px 12px", borderRadius: "8px", border: "1px solid #ef444433", background: "#450a0a22", color: "#ef4444", fontSize: "12px", cursor: "pointer", fontFamily: "Georgia,serif", transition: "all 0.2s" }}
+                            onMouseEnter={(e) => { e.currentTarget.style.background = "#7f1d1d"; e.currentTarget.style.color = "#fff"; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.background = "#450a0a22"; e.currentTarget.style.color = "#ef4444"; }}>
+                            🗑 Delete
+                          </button>
+                        </td>
                       </tr>
                     );
                   })}
@@ -853,6 +957,14 @@ function AdminDashboard({ onBack }: { onBack: () => void }) {
         </div>
       </div>
       <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }`}</style>
+      {confirmReg && (
+        <DeleteConfirmModal
+          reg={confirmReg}
+          onConfirm={handleDelete}
+          onCancel={() => setConfirmReg(null)}
+          deleting={deleting}
+        />
+      )}
     </main>
   );
 }
