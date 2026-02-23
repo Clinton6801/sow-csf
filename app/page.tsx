@@ -36,7 +36,171 @@ const houseThemes: Record<HouseName, { color: string; accent: string; light: str
 
 const HOUSE_NAMES = Object.keys(houseThemes) as HouseName[];
 
-// ─── Supabase helpers ─────────────────────────────────────────
+// ─── Event Dates ──────────────────────────────────────────────
+const EVENT_DATE     = new Date("2026-03-06T08:00:00");   // 6 March 2026
+const DEADLINE_DATE  = new Date("2026-03-04T23:59:59");   // 4 March 2026 (reg closes)
+const isRegClosed    = () => new Date() > DEADLINE_DATE;
+
+// ─── Export helpers ───────────────────────────────────────────
+function exportToCSV(regs: Registration[]) {
+  const headers = ["#", "Type", "Name", "House", "Class/Grade", "Attendance Mode", "Registered At"];
+  const rows = regs.map(r => [
+    r.type === "Student" && r.reg_number ? `#${String(r.reg_number).padStart(4, "0")}` : "—",
+    r.type,
+    r.name,
+    r.house,
+    r.class_name || "—",
+    r.mode || "—",
+    new Date(r.timestamp).toLocaleString("en-GB"),
+  ]);
+  const csv = [headers, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = url;
+  a.download = `SOW-Festival-Registrations-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click(); URL.revokeObjectURL(url);
+}
+
+function exportToExcel(regs: Registration[]) {
+  // Build a simple HTML table that Excel can open natively
+  const rows = regs.map(r => `
+    <tr>
+      <td>${r.type === "Student" && r.reg_number ? `#${String(r.reg_number).padStart(4,"0")}` : "—"}</td>
+      <td>${r.type}</td>
+      <td>${r.name}</td>
+      <td>${r.house}</td>
+      <td>${r.class_name || "—"}</td>
+      <td>${r.mode || "—"}</td>
+      <td>${new Date(r.timestamp).toLocaleString("en-GB")}</td>
+    </tr>`).join("");
+  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="UTF-8"></head><body><table><thead><tr><th>#</th><th>Type</th><th>Name</th><th>House</th><th>Class/Grade</th><th>Attendance Mode</th><th>Registered At</th></tr></thead><tbody>${rows}</tbody></table></body></html>`;
+  const blob = new Blob([html], { type: "application/vnd.ms-excel;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = url;
+  a.download = `SOW-Festival-Registrations-${new Date().toISOString().slice(0,10)}.xls`;
+  a.click(); URL.revokeObjectURL(url);
+}
+
+// ─── Countdown Timer ──────────────────────────────────────────
+function CountdownTimer() {
+  const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0, expired: false });
+  const [regClosed, setRegClosed] = useState(isRegClosed());
+
+  useEffect(() => {
+    const tick = () => {
+      const now = new Date();
+      setRegClosed(now > DEADLINE_DATE);
+      const target = now < DEADLINE_DATE ? DEADLINE_DATE : EVENT_DATE;
+      const diff = target.getTime() - now.getTime();
+      if (diff <= 0) { setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0, expired: true }); return; }
+      setTimeLeft({
+        days:    Math.floor(diff / 86400000),
+        hours:   Math.floor((diff % 86400000) / 3600000),
+        minutes: Math.floor((diff % 3600000)  / 60000),
+        seconds: Math.floor((diff % 60000)    / 1000),
+        expired: false,
+      });
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const label = regClosed ? "Event starts in" : "Registration closes in";
+  const units = [
+    { val: timeLeft.days,    lbl: "Days" },
+    { val: timeLeft.hours,   lbl: "Hours" },
+    { val: timeLeft.minutes, lbl: "Mins" },
+    { val: timeLeft.seconds, lbl: "Secs" },
+  ];
+
+  return (
+    <div style={{ width: "100%", maxWidth: "680px", margin: "0 auto 28px", textAlign: "center" }}>
+      <p style={{ fontSize: "10px", letterSpacing: "4px", color: regClosed ? "#f97316" : "#22c55e", textTransform: "uppercase", fontFamily: "Georgia,serif", margin: "0 0 12px 0" }}>
+        {regClosed ? "🎉 Registration closed — " : "⏳ "}{label}
+      </p>
+      <div style={{ display: "flex", gap: "10px", justifyContent: "center" }}>
+        {units.map(({ val, lbl }) => (
+          <div key={lbl} style={{ flex: 1, maxWidth: "80px", background: "linear-gradient(135deg,#1e293b,#0f172a)", borderRadius: "14px", border: "1px solid #334155", padding: "14px 8px" }}>
+            <div style={{ fontSize: "clamp(22px,5vw,34px)", fontWeight: "bold", color: "#f1f5f9", fontFamily: "monospace", lineHeight: 1 }}>
+              {String(val).padStart(2, "0")}
+            </div>
+            <div style={{ fontSize: "9px", letterSpacing: "2px", color: "#475569", textTransform: "uppercase", marginTop: "6px" }}>{lbl}</div>
+          </div>
+        ))}
+      </div>
+      <p style={{ fontSize: "11px", color: "#334155", margin: "10px 0 0", fontFamily: "Georgia,serif" }}>
+        🏆 Event Date: 6th March 2026 &nbsp;•&nbsp; 📋 Registration Deadline: 4th March 2026
+      </p>
+    </div>
+  );
+}
+
+// ─── House Leaderboard ────────────────────────────────────────
+function HouseLeaderboard() {
+  const [counts, setCounts] = useState<Record<HouseName, number>>({ "Amani House": 0, "Imara House": 0, "Zamani House": 0, "Ubora House": 0 });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await sbFetch("/registrations?select=house");
+        const tally: Record<string, number> = { "Amani House": 0, "Imara House": 0, "Zamani House": 0, "Ubora House": 0 };
+        (data || []).forEach((r: { house: string }) => { if (tally[r.house] !== undefined) tally[r.house]++; });
+        setCounts(tally as Record<HouseName, number>);
+      } catch {}
+      setLoading(false);
+    })();
+  }, []);
+
+  const sorted = [...HOUSE_NAMES].sort((a, b) => counts[b] - counts[a]);
+  const max = Math.max(...Object.values(counts), 1);
+  const medals = ["🥇", "🥈", "🥉", "4️⃣"];
+
+  return (
+    <div style={{ width: "100%", maxWidth: "680px", margin: "0 auto 32px" }}>
+      <p style={{ fontSize: "10px", letterSpacing: "4px", color: "#64748b", textTransform: "uppercase", fontFamily: "Georgia,serif", textAlign: "center", margin: "0 0 14px 0" }}>🏠 House Registration Leaderboard</p>
+      <div style={{ background: "linear-gradient(135deg,#1e293b,#0f172a)", borderRadius: "18px", border: "1px solid #334155", overflow: "hidden", padding: "16px 20px", display: "flex", flexDirection: "column", gap: "12px" }}>
+        {loading ? (
+          <div style={{ textAlign: "center", color: "#475569", fontSize: "13px", padding: "12px" }}>Loading…</div>
+        ) : (
+          sorted.map((house, i) => {
+            const t = houseThemes[house];
+            const pct = max > 0 ? (counts[house] / max) * 100 : 0;
+            return (
+              <div key={house}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span style={{ fontSize: "16px" }}>{medals[i]}</span>
+                    <span style={{ fontSize: "13px", fontWeight: "bold", color: t.accent, fontFamily: "Georgia,serif" }}>{t.emoji} {house}</span>
+                  </div>
+                  <span style={{ fontSize: "13px", fontWeight: "bold", color: "#f1f5f9", fontFamily: "monospace" }}>{counts[house]} registered</span>
+                </div>
+                <div style={{ height: "8px", backgroundColor: "#0f172a", borderRadius: "8px", overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${pct}%`, background: `linear-gradient(90deg,${t.color},${t.accent})`, borderRadius: "8px", transition: "width 0.8s ease" }} />
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Registration Closed Banner ───────────────────────────────
+function RegistrationClosedBanner() {
+  return (
+    <div style={{ width: "100%", maxWidth: "680px", margin: "0 auto 28px", padding: "20px 24px", borderRadius: "18px", background: "linear-gradient(135deg,#1c0a00,#2d1200)", border: "2px solid #f9731644", textAlign: "center", fontFamily: "Georgia,serif" }}>
+      <div style={{ fontSize: "32px", marginBottom: "8px" }}>🔒</div>
+      <div style={{ fontSize: "16px", fontWeight: "bold", color: "#f97316", marginBottom: "6px" }}>Registration is Now Closed</div>
+      <div style={{ fontSize: "13px", color: "#78716c", lineHeight: 1.6 }}>
+        The registration deadline was <strong style={{ color: "#f1f5f9" }}>4th March 2026</strong>.<br />
+        The festival takes place on <strong style={{ color: "#f1f5f9" }}>6th March 2026</strong>. See you there! 🎉
+      </div>
+    </div>
+  );
+}
 async function sbFetch(path: string, options?: RequestInit) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1${path}`, {
     ...options,
@@ -406,6 +570,13 @@ function RegistrationShell({ title, subtitle, accentColor, onBack, children }: {
 // ─── LANDING ──────────────────────────────────────────────────
 function LandingPage({ onSelect }: { onSelect: (s: Screen) => void }) {
   const [hovered, setHovered] = useState<string | null>(null);
+  const [regClosed, setRegClosed] = useState(isRegClosed());
+
+  useEffect(() => {
+    const id = setInterval(() => setRegClosed(isRegClosed()), 5000);
+    return () => clearInterval(id);
+  }, []);
+
   const cards = [
     { key: "guest", icon: "🎟️", title: "Guest Pass", color: "#3b82f6", desc: "For parents, visitors, and invited guests attending the festival.", cta: "Register as Guest" },
     { key: "student", icon: "🎓", title: "Student Pass", color: "#f97316", desc: "For enrolled students competing or participating in the festival.", cta: "Register as Student" },
@@ -414,25 +585,38 @@ function LandingPage({ onSelect }: { onSelect: (s: Screen) => void }) {
     <main style={{ minHeight: "100vh", backgroundColor: "#080d14", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "clamp(24px,5vw,60px)", fontFamily: "Georgia,serif", position: "relative", overflow: "hidden" }}>
       <div style={{ position: "absolute", width: "600px", height: "600px", borderRadius: "50%", top: "-200px", left: "-200px", background: "radial-gradient(circle,#f9731618 0%,transparent 70%)", pointerEvents: "none" }} />
       <div style={{ position: "absolute", width: "500px", height: "500px", borderRadius: "50%", bottom: "-150px", right: "-150px", background: "radial-gradient(circle,#ec489918 0%,transparent 70%)", pointerEvents: "none" }} />
-      <div style={{ textAlign: "center", marginBottom: "clamp(32px,6vw,56px)" }}>
-       <div style={{ width: "80px", height: "80px", borderRadius: "50%", overflow: "hidden", border: "2px solid #334155", margin: "0 auto 20px", boxShadow: "0 0 40px #f9731618" }}>
-  <img src="/logo.jpeg" alt="Seat of Wisdom Logo" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-</div>
+      <div style={{ textAlign: "center", marginBottom: "clamp(24px,4vw,40px)" }}>
+        <div style={{ width: "80px", height: "80px", borderRadius: "50%", overflow: "hidden", border: "2px solid #334155", margin: "0 auto 20px", boxShadow: "0 0 40px #f9731618" }}>
+          <img src="/logo.jpeg" alt="Seat of Wisdom Logo" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+        </div>
         <p style={{ fontSize: "clamp(10px,1.5vw,12px)", letterSpacing: "6px", color: "#f97316", margin: "0 0 10px 0", textTransform: "uppercase" }}>Seat of Wisdom Group of Schools</p>
         <h1 style={{ fontSize: "clamp(28px,6vw,56px)", fontWeight: "bold", color: "#f1f5f9", margin: "0 0 8px 0", lineHeight: 1.15 }}>Cultural Sports<br />Festival 2026</h1>
-        <p style={{ color: "#475569", margin: 0, fontSize: "clamp(13px,2vw,16px)" }}>Generate your personalised digital pass</p>
+        <p style={{ color: "#475569", margin: "0 0 28px 0", fontSize: "clamp(13px,2vw,16px)" }}>Generate your personalised digital pass</p>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,280px),1fr))", gap: "clamp(16px,3vw,28px)", width: "100%", maxWidth: "680px" }}>
-        {cards.map(({ key, icon, title, color, desc, cta }) => (
-          <button key={key} onMouseEnter={() => setHovered(key)} onMouseLeave={() => setHovered(null)} onClick={() => onSelect(key as Screen)}
-            style={{ padding: "clamp(28px,5vw,44px) clamp(20px,4vw,36px)", borderRadius: "24px", border: hovered === key ? `2px solid ${color}` : "2px solid #1e293b", background: hovered === key ? `linear-gradient(135deg,${color}15,#0f172a)` : "linear-gradient(135deg,#1e293b,#0f172a)", cursor: "pointer", textAlign: "left", transition: "all 0.3s", boxShadow: hovered === key ? `0 0 40px ${color}22` : "none", transform: hovered === key ? "translateY(-4px)" : "none" }}>
-            <div style={{ fontSize: "40px", marginBottom: "16px" }}>{icon}</div>
-            <h2 style={{ fontSize: "clamp(20px,3vw,26px)", fontWeight: "bold", color: "#f1f5f9", margin: "0 0 8px 0" }}>{title}</h2>
-            <p style={{ color: "#64748b", margin: 0, fontSize: "14px", lineHeight: 1.6 }}>{desc}</p>
-            <div style={{ marginTop: "20px", display: "inline-flex", alignItems: "center", gap: "8px", color, fontSize: "13px", fontWeight: "bold" }}>{cta} <span style={{ fontSize: "18px" }}>→</span></div>
-          </button>
-        ))}
-      </div>
+
+      {/* Countdown */}
+      <CountdownTimer />
+
+      {/* House Leaderboard */}
+      <HouseLeaderboard />
+
+      {/* Closed banner OR registration cards */}
+      {regClosed ? (
+        <RegistrationClosedBanner />
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,280px),1fr))", gap: "clamp(16px,3vw,28px)", width: "100%", maxWidth: "680px" }}>
+          {cards.map(({ key, icon, title, color, desc, cta }) => (
+            <button key={key} onMouseEnter={() => setHovered(key)} onMouseLeave={() => setHovered(null)} onClick={() => onSelect(key as Screen)}
+              style={{ padding: "clamp(28px,5vw,44px) clamp(20px,4vw,36px)", borderRadius: "24px", border: hovered === key ? `2px solid ${color}` : "2px solid #1e293b", background: hovered === key ? `linear-gradient(135deg,${color}15,#0f172a)` : "linear-gradient(135deg,#1e293b,#0f172a)", cursor: "pointer", textAlign: "left", transition: "all 0.3s", boxShadow: hovered === key ? `0 0 40px ${color}22` : "none", transform: hovered === key ? "translateY(-4px)" : "none" }}>
+              <div style={{ fontSize: "40px", marginBottom: "16px" }}>{icon}</div>
+              <h2 style={{ fontSize: "clamp(20px,3vw,26px)", fontWeight: "bold", color: "#f1f5f9", margin: "0 0 8px 0" }}>{title}</h2>
+              <p style={{ color: "#64748b", margin: 0, fontSize: "14px", lineHeight: 1.6 }}>{desc}</p>
+              <div style={{ marginTop: "20px", display: "inline-flex", alignItems: "center", gap: "8px", color, fontSize: "13px", fontWeight: "bold" }}>{cta} <span style={{ fontSize: "18px" }}>→</span></div>
+            </button>
+          ))}
+        </div>
+      )}
+
       <button onClick={() => onSelect("admin")} style={{ marginTop: "40px", background: "none", border: "none", cursor: "pointer", color: "#1e293b", fontSize: "12px", fontFamily: "Georgia,serif", letterSpacing: "2px", textTransform: "uppercase" }}
         onMouseEnter={(e) => (e.currentTarget.style.color = "#475569")} onMouseLeave={(e) => (e.currentTarget.style.color = "#1e293b")}>
         ⚙ Admin Dashboard
@@ -527,7 +711,14 @@ function GuestRegistration({ onBack }: { onBack: () => void }) {
 
   return (
     <RegistrationShell title="Guest Registration" subtitle="Join the 2026 Cultural Sports Festival" accentColor={theme.accent} onBack={onBack}>
-      <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+      {isRegClosed() ? (
+        <div style={{ gridColumn: "1/-1", padding: "48px 24px", textAlign: "center", fontFamily: "Georgia,serif" }}>
+          <div style={{ fontSize: "40px", marginBottom: "12px" }}>🔒</div>
+          <div style={{ fontSize: "18px", fontWeight: "bold", color: "#f97316", marginBottom: "8px" }}>Registration is Closed</div>
+          <div style={{ fontSize: "13px", color: "#64748b" }}>The deadline was 4th March 2026. The festival is on 6th March 2026!</div>
+        </div>
+      ) : (
+      <><div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
         <Field label="Full Guest Name"><input style={inputBase} placeholder="e.g. John Doe" onChange={(e) => setFormData({ ...formData, name: e.target.value })} /></Field>
         <Field label="Supporting House"><HouseGrid value={formData.house} onChange={(h) => setFormData({ ...formData, house: h })} /></Field>
         <Field label="How Will You Join Us?">
@@ -555,6 +746,7 @@ function GuestRegistration({ onBack }: { onBack: () => void }) {
         )}
       </div>
       <PassPreview canvasRef={canvasRef} image={image} accentColor={theme.accent} canvasWidth={800} canvasHeight={420} onDownload={handleDownload} downloadDisabled={!image || !formData.name} placeholder="Upload a photo to preview your guest pass" showShare={saved} shareName={formData.name} shareHouse={formData.house} />
+      </>)}
     </RegistrationShell>
   );
 }
@@ -671,7 +863,14 @@ function StudentRegistration({ onBack }: { onBack: () => void }) {
 
   return (
     <RegistrationShell title="Student Registration" subtitle="Compete in the 2026 Cultural Sports Festival" accentColor={theme.accent} onBack={onBack}>
-      <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+      {isRegClosed() ? (
+        <div style={{ gridColumn: "1/-1", padding: "48px 24px", textAlign: "center", fontFamily: "Georgia,serif" }}>
+          <div style={{ fontSize: "40px", marginBottom: "12px" }}>🔒</div>
+          <div style={{ fontSize: "18px", fontWeight: "bold", color: "#f97316", marginBottom: "8px" }}>Registration is Closed</div>
+          <div style={{ fontSize: "13px", color: "#64748b" }}>The deadline was 4th March 2026. The festival is on 6th March 2026!</div>
+        </div>
+      ) : (
+      <><div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
         {/* Registration counter */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderRadius: "14px", background: "linear-gradient(135deg,#1c1408,#0d0a04)", border: `1px solid ${theme.accent}44` }}>
           <div>
@@ -705,6 +904,7 @@ function StudentRegistration({ onBack }: { onBack: () => void }) {
         )}
       </div>
       <PassPreview canvasRef={canvasRef} image={image && myNumber !== null ? image : null} accentColor={theme.accent} canvasWidth={800} canvasHeight={430} onDownload={download} downloadDisabled={!image || !formData.name || myNumber === null} placeholder="Fill in your details & confirm registration to generate your pass" showShare={myNumber !== null} shareName={formData.name} shareHouse={formData.house} />
+      </>)}
     </RegistrationShell>
   );
 }
@@ -861,7 +1061,9 @@ function AdminDashboard({ onBack }: { onBack: () => void }) {
               </span>
             </div>
           </div>
-          <div style={{ display: "flex", gap: "10px" }}>
+          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+            <button onClick={() => exportToCSV(regs)} disabled={regs.length === 0} style={{ padding: "10px 18px", borderRadius: "10px", border: "1px solid #22c55e44", background: regs.length === 0 ? "#1e293b" : "linear-gradient(135deg,#052e16,#15803d)", color: regs.length === 0 ? "#475569" : "#22c55e", cursor: regs.length === 0 ? "not-allowed" : "pointer", fontFamily: "Georgia,serif", fontSize: "13px", fontWeight: "bold" }}>⬇ Export CSV</button>
+            <button onClick={() => exportToExcel(regs)} disabled={regs.length === 0} style={{ padding: "10px 18px", borderRadius: "10px", border: "1px solid #16a34a44", background: regs.length === 0 ? "#1e293b" : "linear-gradient(135deg,#14532d,#16a34a)", color: regs.length === 0 ? "#475569" : "#4ade80", cursor: regs.length === 0 ? "not-allowed" : "pointer", fontFamily: "Georgia,serif", fontSize: "13px", fontWeight: "bold" }}>⬇ Export Excel</button>
             <button onClick={fetchData} style={{ padding: "10px 18px", borderRadius: "10px", border: "1px solid #334155", background: "#1e293b", color: "#94a3b8", cursor: "pointer", fontFamily: "Georgia,serif", fontSize: "13px" }}>↻ Refresh</button>
             <button onClick={onBack} style={{ padding: "10px 18px", borderRadius: "10px", border: "1px solid #334155", background: "#1e293b", color: "#94a3b8", cursor: "pointer", fontFamily: "Georgia,serif", fontSize: "13px" }}>← Exit</button>
           </div>
