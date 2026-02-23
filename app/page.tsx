@@ -415,7 +415,9 @@ function LandingPage({ onSelect }: { onSelect: (s: Screen) => void }) {
       <div style={{ position: "absolute", width: "600px", height: "600px", borderRadius: "50%", top: "-200px", left: "-200px", background: "radial-gradient(circle,#f9731618 0%,transparent 70%)", pointerEvents: "none" }} />
       <div style={{ position: "absolute", width: "500px", height: "500px", borderRadius: "50%", bottom: "-150px", right: "-150px", background: "radial-gradient(circle,#ec489918 0%,transparent 70%)", pointerEvents: "none" }} />
       <div style={{ textAlign: "center", marginBottom: "clamp(32px,6vw,56px)" }}>
-        <div style={{ width: "80px", height: "80px", borderRadius: "50%", background: "linear-gradient(135deg,#1e293b,#0f172a)", border: "2px solid #334155", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "36px", margin: "0 auto 20px", boxShadow: "0 0 40px #f9731618" }}>🏛️</div>
+       <div style={{ width: "80px", height: "80px", borderRadius: "50%", overflow: "hidden", border: "2px solid #334155", margin: "0 auto 20px", boxShadow: "0 0 40px #f9731618" }}>
+  <img src="/logo.jpeg" alt="Seat of Wisdom Logo" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+</div>
         <p style={{ fontSize: "clamp(10px,1.5vw,12px)", letterSpacing: "6px", color: "#f97316", margin: "0 0 10px 0", textTransform: "uppercase" }}>Seat of Wisdom Group of Schools</p>
         <h1 style={{ fontSize: "clamp(28px,6vw,56px)", fontWeight: "bold", color: "#f1f5f9", margin: "0 0 8px 0", lineHeight: 1.15 }}>Cultural Sports<br />Festival 2026</h1>
         <p style={{ color: "#475569", margin: 0, fontSize: "clamp(13px,2vw,16px)" }}>Generate your personalised digital pass</p>
