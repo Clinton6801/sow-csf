@@ -5,8 +5,8 @@ import { useState, useRef, useEffect } from "react";
 // 🔧 SUPABASE CONFIG — paste your credentials here
 // Dashboard → Settings → API
 // ═══════════════════════════════════════════════════════════════
-const SUPABASE_URL = "https://YOUR_PROJECT.supabase.co";
-const SUPABASE_ANON_KEY = "YOUR_ANON_KEY_HERE";
+const SUPABASE_URL = "https://ftvucbgindnzbqrsuemp.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ0dnVjYmdpbmRuemJxcnN1ZW1wIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3ODc1NzQsImV4cCI6MjA4NzM2MzU3NH0.2mSyEk7KmcDN3Y5WtecwZvBCsQD--rNzPpi4li7fUlo";
 
 // ─── Types ────────────────────────────────────────────────────
 type HouseName = "Amani House" | "Imara House" | "Zamani House" | "Ubora House";
